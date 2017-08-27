@@ -28,8 +28,8 @@ char MODE = MODE_NO_MODE;
 
 
 int LANE = 0;
-int LANE_1 = 1;
-int LANE_2 = 2;
+char LANE_1 = '1';
+char LANE_2 = '2';
 
 
 int GAME_STATE = 0;
@@ -50,27 +50,28 @@ int ERROR_CODE = 0;
 long startTime;
 long elapsedTime;
 int fractional;
-
+long WINNING_TIME = 0;
 
 int BAUD_RATE = 9600;
 
-int DISCO_MODE_AMOUNT_LASERS = 5;
-int DISCO_MODE_DELAY = 500;
+int DISCO_MODE_AMOUNT_LASERS = 1;
+int DISCO_MODE_DELAY = 50;
 
 
 //Host slave communication
 char SERIAL_ACK = 'A';
 char SERIAL_START = 'S';
 char SERIAL_FINISHED = 'F';
+char SERIAL_RESET = 'R';
 
 int CONNECTION_TIMEOUT = 10000;
 
 /**
    Lasers
 */
-int LASER_1 = 1;
-int LASER_2 = 2;
-int LASER_3 = 3;
+int LASER_1 = 9;
+int LASER_2 = 10;
+int LASER_3 = 11;
 int LASER_4 = 4;
 int LASER_5 = 5;
 int LASER_6 = 6;
@@ -84,15 +85,15 @@ int LASER_13 = 13;
 int LASER_14 = 14;
 int LASER_15 = 15;
 
-int ALL_LASERS[] = {LASER_1, LASER_2, LASER_3, LASER_4, LASER_5, LASER_6, LASER_7, LASER_8, LASER_9, LASER_10, LASER_11, LASER_12, LASER_13, LASER_14, LASER_15};
-const int TOTAL_LASERS = 15;
+int ALL_LASERS[] = {LASER_1, LASER_2, LASER_3}; // LASER_4, LASER_5, LASER_6, LASER_7, LASER_8, LASER_9, LASER_10, LASER_11, LASER_12, LASER_13, LASER_14, LASER_15};
+const int TOTAL_LASERS = 3;
 
 /**
    Detectors
 */
-int DETECTOR_1 = 21;
-int DETECTOR_2 = 22;
-int DETECTOR_3 = 23;
+int DETECTOR_1 = 6;
+int DETECTOR_2 = 5;
+int DETECTOR_3 = 4;
 int DETECTOR_4 = 24;
 int DETECTOR_5 = 25;
 int DETECTOR_6 = 26;
@@ -106,19 +107,20 @@ int DETECTOR_13 = 33;
 int DETECTOR_14 = 34;
 int DETECTOR_15 = 35;
 
-int ALL_DETECTORS[] = {DETECTOR_1, DETECTOR_2, DETECTOR_3, DETECTOR_4, DETECTOR_5, DETECTOR_6, DETECTOR_7, DETECTOR_8, DETECTOR_9, DETECTOR_10, DETECTOR_11, DETECTOR_12, DETECTOR_13, DETECTOR_14, DETECTOR_15};
-const int TOTAL_DETECTORS = 15;
+int ALL_DETECTORS[] = {DETECTOR_1, DETECTOR_2, DETECTOR_3 };//DETECTOR_4, DETECTOR_5, DETECTOR_6, DETECTOR_7, DETECTOR_8, DETECTOR_9, DETECTOR_10, DETECTOR_11, DETECTOR_12, DETECTOR_13, DETECTOR_14, DETECTOR_15};
+const int TOTAL_DETECTORS = 3;
 
 int USABLE_DETECTORS[TOTAL_DETECTORS];
+int LASER_USABLE_DETECTOR_TUPLE[TOTAL_DETECTORS];
 int TOTAL_USABLE_DETECTORS = 0;
 int BROKEN_LASER = 0;
 
-int DETECTOR_THRESHOLD = 10;
+int DETECTOR_THRESHOLD = 1;
 
 /**
    Buttons
 */
-int WIN_BUTTON = 16;
+int WIN_BUTTON = 12;
 
 
 /**
@@ -145,13 +147,19 @@ void setup()
     if (!determineCollectorState()) {
       return;
     };
+
     if (!waitForGameToStart()) {
       return;
     }
     GAME_STATE = GAME_COUNTDOWN;
     startCountdown();
+    enableLasers();
     startTimer();
     GAME_STATE = GAME_STARTED;
+  }
+
+  if(MODE == MODE_DISCO){
+      Serial.println("Disco mode engagend!");
   }
 
   if (MODE == MODE_DEBUG) {
@@ -184,9 +192,11 @@ void loop()
   }
 
   if (GAME_STATE == GAME_FINISHED) {
-    finishedGame();
+    //Display winning time
   }
 
+  //Alway check for reset command
+  checkForResetCommand();
 
 
 
@@ -242,7 +252,10 @@ void clockLoop() {
 
 void printElapsedTime() {
   elapsedTime =   millis() - startTime;
+  printTime(elapsedTime);
+}
 
+void printTime(long time) {
   Serial.print( (int)(elapsedTime / 1000L));
   Serial.print(".");
 
@@ -299,14 +312,26 @@ void checkForSerialCommand() {
   }
 }
 
+void checkForResetCommand(){
+  while (Serial.available() > 0) {
+      char incomming = Serial.read();
+      if (incomming == SERIAL_RESET) {
+        resetFunc();
+      }
+    }
+}
+
 void checkForLaserBreak() {
   for (int i = 0; i < TOTAL_USABLE_DETECTORS; i++) {
     if (digitalRead(USABLE_DETECTORS[i]) == LOW) {
       //Laser was broken!
       //Store the laser
-      BROKEN_LASER = USABLE_DETECTORS[i];
+      BROKEN_LASER = LASER_USABLE_DETECTOR_TUPLE[i];
       GAME_STATE = GAME_FINISHED;
       disableLasers();
+      digitalWrite(BROKEN_LASER, HIGH);
+      Serial.println("Laser broken!");
+      return;
     }
   }
 }
@@ -315,20 +340,29 @@ void checkForButtonPress() {
   if (digitalRead(WIN_BUTTON) == HIGH) {
     GAME_STATE = GAME_FINISHED;
     setWinState();
+    Serial.println("Button pressed!");
   }
 }
 
 void setWinState() {
   WIN_STATE = true;
+  WINNING_TIME =   millis() - startTime;
   if (MODE == MODE_HEAD_TO_HEAD) {
     HEAD_TO_HEAD_WINNER = HEAD_TO_HEAD_WINNER == 0 ? 2 : 1;
-    Serial.write(SERIAL_FINISHED);
   }
+  Serial.print((String)"Winning time: ");
+  printTime(WINNING_TIME);
 }
 
 void disableLasers() {
   for (int i = 0; i < TOTAL_LASERS; i++) {
     digitalWrite(ALL_LASERS[i], LOW);
+  }
+}
+
+void enableLasers() {
+  for (int i = 0; i < TOTAL_LASERS; i++) {
+    digitalWrite(ALL_LASERS[i], HIGH);
   }
 }
 
@@ -357,6 +391,8 @@ void runDebug() {
 }
 
 bool determineCollectorState() {
+  enableLasers();
+  delay(200);
   Serial.println("Error correcting on detectors");
   for (int i = 0; i < TOTAL_DETECTORS; i++) {
     int state = digitalRead(ALL_DETECTORS[i]);
@@ -370,12 +406,32 @@ bool determineCollectorState() {
     }
 
   }
-  Serial.println((String)"Found " + TOTAL_USABLE_DETECTORS + " usable detectors of " + TOTAL_DETECTORS);
 
+  disableLasers();
+  for (int i = 0; i < TOTAL_USABLE_DETECTORS; i++) {
+      for(int j = 0; j < TOTAL_LASERS; j++){
+          digitalWrite(ALL_LASERS[j], HIGH);
+          delay(500);
+          if(digitalRead(USABLE_DETECTORS[i]) == HIGH){
+             //Found mapping
+             //add to list
+             LASER_USABLE_DETECTOR_TUPLE[i] = ALL_LASERS[j];
+          }
+          digitalWrite(ALL_LASERS[j], LOW);
+      }
+  }
+
+
+
+  //Start mapping lasers to detectors
+  
+  
+  Serial.println((String)"Found " + TOTAL_USABLE_DETECTORS + " usable detectors of " + TOTAL_DETECTORS);
+  disableLasers();
   if (TOTAL_USABLE_DETECTORS < DETECTOR_THRESHOLD) {
     Serial.println("Game could not start, not enough detectors");
-    //    throwError(30);
-    //    return false;
+    throwError(30);
+    return false;
   }
 
   return true;
@@ -391,9 +447,9 @@ void throwError(int errorCode) {
 void laserDiscoMode() {
   int setLasers[DISCO_MODE_AMOUNT_LASERS];
   for (int i = 0; i < DISCO_MODE_AMOUNT_LASERS; i++) {
-    int rand = random(1, TOTAL_LASERS);
+    int rand = random(0, TOTAL_LASERS);
     digitalWrite(ALL_LASERS[rand], HIGH);
-    setLasers[i] = rand;
+    setLasers[i] = ALL_LASERS[rand];
   }
 
   delay(DISCO_MODE_DELAY);
@@ -417,10 +473,10 @@ bool waitForGameToStart() {
 }
 
 bool waitForGameHeadToHead() {
-  Serial.print("Starting head to had game! Press any key to start: ");
+  Serial.print("Starting head to head game! Waiting for lane select: ");
   while (Serial.available() <= 0) {}
   char lane =  (Serial.read());
-
+  Serial.println(lane);
   if (lane == LANE_1) {
     lane = LANE_1; //HOST
     return startGameAsHost();
@@ -435,9 +491,8 @@ bool waitForGameHeadToHead() {
 
 bool startGameAsHost() {
   unsigned long timeout = millis();
+  Serial.println("Started sending start to slave, waiting for ACK");
   while ((millis() - timeout) < CONNECTION_TIMEOUT) {
-    Serial.println("Started sending start to slave");
-    Serial.write(SERIAL_START); //Diffrent serial port
     while (Serial.available() > 0) {
       char incomming = Serial.read();
       if (incomming == SERIAL_ACK) {
