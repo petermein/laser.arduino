@@ -52,7 +52,7 @@ long elapsedTime;
 int fractional;
 long WINNING_TIME = 0;
 
-int BAUD_RATE = 9600;
+//int BAUD_RATE = 115200;
 
 int DISCO_MODE_AMOUNT_LASERS = 1;
 int DISCO_MODE_DELAY = 50;
@@ -134,7 +134,7 @@ void(* resetFunc) (void) = 0;//declare reset function at address 0
 void setup()
 {
   // Wait for serial instructions
-  Serial.begin(BAUD_RATE);
+  Serial.begin(115200);
 
   setupPins();
 
@@ -144,18 +144,15 @@ void setup()
 
   if (MODE == MODE_SINGLE_LANE || MODE == MODE_HEAD_TO_HEAD) {
     Serial.println("Valid game mode selected");
-    if (!determineCollectorState()) {
-      return;
-    };
+    if (!determineCollectorState()) { return; };
 
-    if (!waitForGameToStart()) {
-      return;
-    }
-    GAME_STATE = GAME_COUNTDOWN;
+    if (!waitForGameToStart()) { return;}
     startCountdown();
     enableLasers();
     startTimer();
     GAME_STATE = GAME_STARTED;
+    
+    return;
   }
 
   if(MODE == MODE_DISCO){
@@ -226,6 +223,8 @@ void startTimer() {
 }
 
 void startCountdown() {
+  GAME_STATE = GAME_COUNTDOWN;
+
   Serial.println("Get ready!");
   delay(1000);
   Serial.println(5);
@@ -430,18 +429,19 @@ bool determineCollectorState() {
   disableLasers();
   if (TOTAL_USABLE_DETECTORS < DETECTOR_THRESHOLD) {
     Serial.println("Game could not start, not enough detectors");
-    throwError(30);
-    return false;
+    return throwError(30);
   }
 
   return true;
 }
 
-void throwError(int errorCode) {
+bool throwError(int errorCode) {
   ERROR_CODE = errorCode;
   GAME_STATE = GAME_ERROR;
   //Display on screen?
-  Serial.println("Error: " + errorCode);
+  Serial.println((String) "Error: " + errorCode);
+
+  return false;
 }
 
 void laserDiscoMode() {
@@ -468,8 +468,7 @@ bool waitForGameToStart() {
     return waitForGameSingleLane();
   }
 
-  throwError(24);
-  return false;
+  return throwError(24);
 }
 
 bool waitForGameHeadToHead() {
@@ -485,8 +484,7 @@ bool waitForGameHeadToHead() {
     return startGameAsSlave();
   }
 
-  throwError(21);
-  return false;
+  return throwError(21);
 }
 
 bool startGameAsHost() {
@@ -501,7 +499,7 @@ bool startGameAsHost() {
     }
   }
 
-  throwError(22); //Connection timeout, no response from other lane
+  return throwError(22); //Connection timeout, no response from other lane
 }
 
 bool startGameAsSlave() {
@@ -515,16 +513,8 @@ bool startGameAsSlave() {
       }
     }
   }
-  throwError(23); //Connection timeout, no response from other lane
-}
-
-
-bool waitForGameSingleLane() {
-  Serial.print("Starting single lane game! Press any key to start: ");
-  while (Serial.available() <= 0) {}
-  char lane =  (Serial.read());
-  LANE = LANE_1; //Always lane 1 in single mode
-  return true;
+  
+  return throwError(23); //Connection timeout, no response from other lane
 }
 
 bool waitForGameModeSelect() {
@@ -566,3 +556,13 @@ bool waitForGameModeSelect() {
   Serial.println("No mode selected");
   return false;
 }
+
+bool waitForGameSingleLane() {
+  Serial.print("Starting single lane game! Press any key to start: ");
+  while (Serial.available() <= 0) {}
+  char lane =  (Serial.read());
+  LANE = LANE_1; //Always lane 1 in single mode
+  return true;
+}
+
+
