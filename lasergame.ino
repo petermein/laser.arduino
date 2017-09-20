@@ -8,13 +8,20 @@
 ******************************************************************/
 
 /**
+   Host or Slave
+*/
+int TYPE = 0;
+int HOST = 1;
+int SLAVE = 2;
+
+
+/**
    Constants
 */
 char MODE_NO_MODE = '0';
-char MODE_DEBUG = '4';
+char MODE_DEBUG = '3';
 char MODE_SINGLE_LANE = '1';
-char MODE_HEAD_TO_HEAD = '2';
-char MODE_DISCO = '3';
+char MODE_DISCO = '2';
 
 char MODE = MODE_NO_MODE;
 
@@ -59,30 +66,38 @@ int DISCO_MODE_DELAY = 500;
 
 
 //Host slave communication
-char SERIAL_ACK = 'A';
-char SERIAL_START = 'S';
-char SERIAL_FINISHED = 'F';
+ const char SERIAL_ACK = 'A';
+ const char SERIAL_START = 'S';
+ const char SERIAL_FINISHED = 'F';
+ const char SERIAL_DEBUG = 'D';
+ const char SERIAL_DISCO = 'E';
+ const char SERIAL_GAME_MODE = 'L';
 
 int CONNECTION_TIMEOUT = 10000;
 
 /**
+   Jumpers
+*/
+int JUMPER_MASTER = 12;
+
+/**
    Lasers
 */
-int LASER_1 = 1;
-int LASER_2 = 2;
-int LASER_3 = 3;
-int LASER_4 = 4;
-int LASER_5 = 5;
-int LASER_6 = 6;
-int LASER_7 = 7;
-int LASER_8 = 8;
-int LASER_9 = 9;
-int LASER_10 = 10;
-int LASER_11 = 11;
-int LASER_12 = 12;
-int LASER_13 = 13;
-int LASER_14 = 14;
-int LASER_15 = 15;
+int LASER_1 = 22;
+int LASER_2 = 24;
+int LASER_3 = 26;
+int LASER_4 = 28;
+int LASER_5 = 30;
+int LASER_6 = 32;
+int LASER_7 = 34;
+int LASER_8 = 36;
+int LASER_9 = 38;
+int LASER_10 = 40;
+int LASER_11 = 42;
+int LASER_12 = 44;
+int LASER_13 = 46;
+int LASER_14 = 48;
+int LASER_15 = 50;
 
 int ALL_LASERS[] = {LASER_1, LASER_2, LASER_3, LASER_4, LASER_5, LASER_6, LASER_7, LASER_8, LASER_9, LASER_10, LASER_11, LASER_12, LASER_13, LASER_14, LASER_15};
 const int TOTAL_LASERS = 15;
@@ -90,21 +105,21 @@ const int TOTAL_LASERS = 15;
 /**
    Detectors
 */
-int DETECTOR_1 = 21;
-int DETECTOR_2 = 22;
-int DETECTOR_3 = 23;
-int DETECTOR_4 = 24;
-int DETECTOR_5 = 25;
-int DETECTOR_6 = 26;
-int DETECTOR_7 = 27;
-int DETECTOR_8 = 28;
-int DETECTOR_9 = 29;
-int DETECTOR_10 = 30;
-int DETECTOR_11 = 31;
-int DETECTOR_12 = 32;
-int DETECTOR_13 = 33;
-int DETECTOR_14 = 34;
-int DETECTOR_15 = 35;
+int DETECTOR_1 = 23;
+int DETECTOR_2 = 25;
+int DETECTOR_3 = 27;
+int DETECTOR_4 = 29;
+int DETECTOR_5 = 31;
+int DETECTOR_6 = 33;
+int DETECTOR_7 = 35;
+int DETECTOR_8 = 37;
+int DETECTOR_9 = 39;
+int DETECTOR_10 = 41;
+int DETECTOR_11 = 43;
+int DETECTOR_12 = 45;
+int DETECTOR_13 = 47;
+int DETECTOR_14 = 49;
+int DETECTOR_15 = 51;
 
 int ALL_DETECTORS[] = {DETECTOR_1, DETECTOR_2, DETECTOR_3, DETECTOR_4, DETECTOR_5, DETECTOR_6, DETECTOR_7, DETECTOR_8, DETECTOR_9, DETECTOR_10, DETECTOR_11, DETECTOR_12, DETECTOR_13, DETECTOR_14, DETECTOR_15};
 const int TOTAL_DETECTORS = 15;
@@ -133,14 +148,25 @@ void setup()
 {
   // Wait for serial instructions
   Serial.begin(BAUD_RATE);
+  Serial1.begin(BAUD_RATE);
 
   setupPins();
+  //Determine type of arduino
+  determineType();
+  //Wait for connection from host/slave
+  while (!waitForConnection()) {
+    return;
+  }
+
+  if(TYPE == SLAVE){
+    return; //Break out of setup and start waiting for host commands
+  }
 
   while (!waitForGameModeSelect()) {}
 
-  //RUN SELF TEST FOR BROKEN COLLECTORS
+  // //RUN SELF TEST FOR BROKEN COLLECTORS
 
-  if (MODE == MODE_SINGLE_LANE || MODE == MODE_HEAD_TO_HEAD) {
+  if (MODE == MODE_SINGLE_LANE) {
     Serial.println("Valid game mode selected");
     if (!determineCollectorState()) {
       return;
@@ -188,6 +214,11 @@ void loop()
   }
 
 
+  if(TYPE == SLAVE){
+    checkForSerialCommand();
+  }
+
+
 
 
   //Start clock cycle
@@ -205,10 +236,15 @@ void loop()
   //Display win
   //Send serial command to php game finished with time
 
-  //If game mode is head to head
   //Check for command via serial
   //Anounce winner with time
 
+}
+
+
+void determineType(){
+  TYPE = digitalRead(JUMPER_MASTER) == HIGH ? HOST : SLAVE;
+  dd((String)"I am a " + TYPE);
 }
 
 void startTimer() {
@@ -270,6 +306,7 @@ void setupPins() {
   }
 
   pinMode(WIN_BUTTON, INPUT);
+  pinMode(JUMPER_MASTER, INPUT);
 
   //Pinmodes for display
   //Pinmodes for serial rx/tx
@@ -288,14 +325,25 @@ bool finishedGame() {
 }
 
 void checkForSerialCommand() {
-  if (MODE == MODE_HEAD_TO_HEAD) {
-    while (Serial.available() > 0) {
-      char incomming = Serial.read();
-      if (incomming == SERIAL_FINISHED) {
-        //
-        return true;
-      }
+    while (Serial1.available() > 0) {
+      char incomming = Serial1.read();
+      Serial.println((String)"From host: " + incomming);
+      parseIncommingCommand(incomming);
     }
+}
+
+void parseIncommingCommand(char command){
+  switch(command){
+    case SERIAL_GAME_MODE:
+      setSingleLaneMode();
+      break;
+      case SERIAL_DISCO:
+      setDiscoMode();
+      break;
+      case SERIAL_DEBUG:
+      setModeDebug();
+      runDebug();
+      break;
   }
 }
 
@@ -319,11 +367,11 @@ void checkForButtonPress() {
 }
 
 void setWinState() {
-  WIN_STATE = true;
-  if (MODE == MODE_HEAD_TO_HEAD) {
-    HEAD_TO_HEAD_WINNER = HEAD_TO_HEAD_WINNER == 0 ? 2 : 1;
-    Serial.write(SERIAL_FINISHED);
-  }
+  // WIN_STATE = true;
+  // if (MODE == MODE_HEAD_TO_HEAD) {
+  //   HEAD_TO_HEAD_WINNER = HEAD_TO_HEAD_WINNER == 0 ? 2 : 1;
+  //   Serial.write(SERIAL_FINISHED);
+  // }
 }
 
 void disableLasers() {
@@ -337,9 +385,9 @@ void runDebug() {
 
   Serial.println("Testing lasers");
   for (int i = 0; i < TOTAL_LASERS; i++) {
-    Serial.println("Laser: " + i);
+    Serial.println((String)"Laser: " + ALL_LASERS[i]);
     digitalWrite(ALL_LASERS[i], HIGH);
-    delay(2000);
+    delay(200);
     digitalWrite(ALL_LASERS[i], LOW);
 
   }
@@ -348,16 +396,24 @@ void runDebug() {
   Serial.println("Printing detector states");
   for (int i = 0; i < TOTAL_DETECTORS; i++) {
     int state = digitalRead(ALL_DETECTORS[i]);
-    Serial.println((String)"Detector: " + i + " is " + state);
+    delay(100);
+    Serial.println((String)"Detector: " + ALL_DETECTORS[i]);
+    Serial.println(state);
   }
+
+  delay(5000);
 
   //Blink screen
 
 
 }
 
+void sendSerialCommand(char command){
+  Serial1.write(command);
+}
+
 bool determineCollectorState() {
-  Serial.println("Error correcting on detectors");
+  Serial.println((String)"Error correcting on detectors");
   for (int i = 0; i < TOTAL_DETECTORS; i++) {
     int state = digitalRead(ALL_DETECTORS[i]);
 
@@ -374,8 +430,8 @@ bool determineCollectorState() {
 
   if (TOTAL_USABLE_DETECTORS < DETECTOR_THRESHOLD) {
     Serial.println("Game could not start, not enough detectors");
-    //    throwError(30);
-    //    return false;
+       // throwError(30);
+       // return false;
   }
 
   return true;
@@ -389,6 +445,7 @@ void throwError(int errorCode) {
 }
 
 void laserDiscoMode() {
+  dd("Disco mode!");
   int setLasers[DISCO_MODE_AMOUNT_LASERS];
   for (int i = 0; i < DISCO_MODE_AMOUNT_LASERS; i++) {
     int rand = random(1, TOTAL_LASERS);
@@ -406,9 +463,7 @@ void laserDiscoMode() {
 
 bool waitForGameToStart() {
   while (!Serial) {}
-  if (MODE == MODE_HEAD_TO_HEAD) {
-    return waitForGameHeadToHead();
-  } else if (MODE == MODE_SINGLE_LANE) {
+  if (MODE == MODE_SINGLE_LANE) {
     return waitForGameSingleLane();
   }
 
@@ -416,31 +471,28 @@ bool waitForGameToStart() {
   return false;
 }
 
-bool waitForGameHeadToHead() {
-  Serial.print("Starting head to had game! Press any key to start: ");
-  while (Serial.available() <= 0) {}
-  char lane =  (Serial.read());
-
-  if (lane == LANE_1) {
-    lane = LANE_1; //HOST
-    return startGameAsHost();
-  } else if (lane == LANE_2) {
-    lane = LANE_2; //SLAVE
-    return startGameAsSlave();
+bool waitForConnection() {
+  if (TYPE == HOST) {
+    return waitForAckFromSlave();
+  } else if (TYPE == SLAVE) {
+    return waitForHostToStart();
   }
 
   throwError(21);
   return false;
 }
 
-bool startGameAsHost() {
+bool waitForAckFromSlave() {
   unsigned long timeout = millis();
+  dd((String)"Started sending connection to slave");
   while ((millis() - timeout) < CONNECTION_TIMEOUT) {
-    Serial.println("Started sending start to slave");
-    Serial.write(SERIAL_START); //Diffrent serial port
-    while (Serial.available() > 0) {
-      char incomming = Serial.read();
+    delay(500);
+    Serial1.write(SERIAL_START);
+    while (Serial1.available() > 0) {
+      char incomming = Serial1.read();
+      Serial.write(incomming);
       if (incomming == SERIAL_ACK) {
+        dd((String)"Connection with slave!");
         return true;
       }
     }
@@ -449,13 +501,17 @@ bool startGameAsHost() {
   throwError(22); //Connection timeout, no response from other lane
 }
 
-bool startGameAsSlave() {
+bool waitForHostToStart() {
   unsigned long timeout = millis();
+  dd((String)"Started waiting connection from host");
   while ((millis() - timeout) < CONNECTION_TIMEOUT) {
-    while (Serial.available() > 0) {
-      char incomming = Serial.read();
+    delay(500);
+    while (Serial1.available() > 0) {
+      char incomming = Serial1.read();
+      Serial.write(incomming);
       if (incomming == SERIAL_START) {
-        Serial.write(SERIAL_ACK);
+        Serial1.write(SERIAL_ACK);
+        dd((String)"Connection with host!");
         return true;
       }
     }
@@ -476,9 +532,8 @@ bool waitForGameModeSelect() {
   while (!Serial) {}
 
   Serial.println("1: Single lane");
-  Serial.println("2: Head to head");
-  Serial.println("3: Disco");
-  Serial.println("4: Debug");
+  Serial.println("2: Disco");
+  Serial.println("3: Debug");
 
   Serial.print("Select game mode: ");
   while (Serial.available() <= 0) {}
@@ -488,26 +543,40 @@ bool waitForGameModeSelect() {
   Serial.println(mode);
 
   if (mode == MODE_SINGLE_LANE) {
-    MODE = MODE_SINGLE_LANE;
-    GAME_STATE = GAME_WAITING;
-    return true;
-  }
-  if (mode == MODE_HEAD_TO_HEAD) {
-    MODE = MODE_HEAD_TO_HEAD;
-    GAME_STATE = GAME_WAITING;
+    setSingleLaneMode();
+    sendSerialCommand(SERIAL_GAME_MODE);
     return true;
   }
   if (mode == MODE_DISCO) {
-    MODE = MODE_DISCO;
-    GAME_STATE = GAME_NO_GAME;
+    setDiscoMode();
+    sendSerialCommand(SERIAL_DISCO);
     return true;
   }
   if (mode == MODE_DEBUG) {
-    MODE = MODE_DEBUG;
-    GAME_STATE = GAME_NO_GAME;
+    setModeDebug();
+    sendSerialCommand(SERIAL_DEBUG);
     return true;
   }
 
   Serial.println("No mode selected");
   return false;
+}
+
+void setSingleLaneMode(){
+  MODE = MODE_SINGLE_LANE;
+  GAME_STATE = GAME_WAITING;
+}
+
+void setDiscoMode(){
+  MODE = MODE_DISCO;
+  GAME_STATE = GAME_NO_GAME;
+}
+
+void setModeDebug(){
+  MODE = MODE_DEBUG;
+  GAME_STATE = GAME_NO_GAME;
+}
+
+void dd(String msg){
+  Serial.println(msg);
 }
