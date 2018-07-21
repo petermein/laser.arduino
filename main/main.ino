@@ -1,12 +1,27 @@
 #include "SevenSegmentTM1637.h"
 #include "SevenSegmentExtended.h"
+#include "SevenSegmentFun.h"
+#include "SoftwareServo.h" 
 
 /**
   Display
 */
-const byte PIN_CLK = 7; // define CLK pin (any digital pin)
-const byte PIN_DIO = 4; // define DIO pin (any digital pin)
-SevenSegmentExtended display(PIN_CLK, PIN_DIO);
+const byte PIN_CLK = 13; // define CLK pin (any digital pin)
+const byte PIN_DIO = 12; // define DIO pin (any digital pin)
+SevenSegmentFun display(PIN_CLK, PIN_DIO);
+
+/**
+  Servo
+*/
+
+SoftwareServo myservo;  // create servo object to control a servo 
+
+#define pinServo A0
+
+int speed = 1;
+int limits[2] = {30,150};  // set limitations (min/max: 0->180)
+boolean refresh = false;  // toggle refresh on/off
+
 /**
   Lasers
 */
@@ -51,11 +66,12 @@ const int DETECTOR_14 = 49;
 const int DETECTOR_15 = 51;
 const int ALL_DETECTORS[] =
 {
-  DETECTOR_1, DETECTOR_2, DETECTOR_3//, DETECTOR_4, DETECTOR_5, DETECTOR_6, DETECTOR_7, DETECTOR_8, DETECTOR_9, DETECTOR_10, DETECTOR_11, DETECTOR_12, DETECTOR_13, DETECTOR_14
+  DETECTOR_1, DETECTOR_2//, DETECTOR_3//, DETECTOR_4, DETECTOR_5, DETECTOR_6, DETECTOR_7, DETECTOR_8, DETECTOR_9, DETECTOR_10, DETECTOR_11, DETECTOR_12, DETECTOR_13, DETECTOR_14
 };
 
-const int TOTAL_DETECTORS = 3;
+const int TOTAL_DETECTORS = 2;
 int USABLE_DETECTORS[TOTAL_DETECTORS];
+int DETECTOR_MATCHING[51];
 int TOTAL_USABLE_DETECTORS = 0;
 int BROKEN_LASER = 0;
 const int DETECTOR_THRESHOLD = 1;
@@ -63,8 +79,8 @@ const int DETECTOR_THRESHOLD = 1;
 /**
   Buttons
 */
-const int WIN_BUTTON = 16;
-const int CTRL_BUTTON = 17;
+const int WIN_BUTTON = 3;
+const int CTRL_BUTTON = 2;
 
 /**
   Reset
@@ -82,7 +98,7 @@ long lastSendTime;
 /**
   Debug Jumper
 */
-const int DEBUG_JUMPER = 2;
+const int DEBUG_JUMPER = 14;
 
 /**
   Variables
@@ -100,8 +116,8 @@ int GAME_STATE = GAME_SETUP;
 int ERROR_CODE = 0;
 // 2x game settings errors
 // 3x hardware errors
-const int DISCO_MODE_AMOUNT_LASERS = 5;
-const int DISCO_MODE_DELAY = 500;
+const int DISCO_MODE_AMOUNT_LASERS = 1;
+const int DISCO_MODE_DELAY = 1000;
 
 /**
   Serial
@@ -115,11 +131,12 @@ const int PRINT_TIME_INTERVAL = 1000; // ~Every second
 volatile byte command = 0;
 void setup()
 {
+  noInterrupts();
   // Pin's to recognize the type
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
   inDebugMode();
-  
+
   Serial.begin(BAUD_RATE);
   Serial.println("Setup host");
 
@@ -130,13 +147,17 @@ void setup()
   display.begin(); // initializes the display
   display.setBacklight(100); // set the brightness to 100 %
   
+  display.print("--__");
   setupLaserPins();
   
-  pinMode(WIN_BUTTON, INPUT);
-  pinMode(CTRL_BUTTON, INPUT);
-  attachInterrupt(digitalPinToInterrupt(CTRL_BUTTON), blink, RISING);
-  
+  pinMode(WIN_BUTTON, INPUT_PULLUP);
+  pinMode(CTRL_BUTTON, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(WIN_BUTTON), handleWinButton, RISING);
+  attachInterrupt(digitalPinToInterrupt(CTRL_BUTTON), handleCtrlButton, RISING);
+
+  display.print("===_");
   // Switch to waiting mode
+  interrupts();
   delay(1000);
 }
 
@@ -158,10 +179,12 @@ void loop()
   {
     startCountdown();
     setGameState(GAME_STARTED);
+    enableLasers();
     startTime = millis(); //Reset start time
   }
   if (GAME_STATE == GAME_STARTED)
   {
+    disableLasers();
     clockLoop();
     checkForLaserBreak();
   }
@@ -176,7 +199,8 @@ void loop()
   }
   if (GAME_STATE == GAME_DEBUG)
   {
- 
+    int test = digitalRead(WIN_BUTTON);
+     //Serial.println(test);
   }
     if (GAME_STATE == GAME_ERROR)
   {
@@ -185,36 +209,40 @@ void loop()
 }
 
 void handleCtrlButton() {
+  Serial.println("omg");
   if (GAME_STATE == GAME_WAITING)
   {
     setGameState(GAME_COUNTDOWN);
   }
-  if (GAME_STATE == GAME_COUNTDOWN)
+  else if (GAME_STATE == GAME_COUNTDOWN)
   {
     setGameState(GAME_STARTED);
   }
-  if (GAME_STATE == GAME_STARTED)
+  else if (GAME_STATE == GAME_STARTED)
   {
     setGameState(GAME_FAILED);
   }
-  if (GAME_STATE == GAME_WON)
+  else if (GAME_STATE == GAME_WON)
   {
     setGameState(GAME_WAITING);
   }
-  if (GAME_STATE == GAME_FAILED)
-  {
-    setGameState(GAME_WAITING);
-  }
-  if (GAME_STATE == GAME_DEBUG)
+  else if (GAME_STATE == GAME_FAILED)
   {
     setGameState(GAME_WAITING);
   }
 }
 
-void handleFinishButton() {
+void handleWinButton() {
+  Serial.println("WinWinwin");
   if (GAME_STATE == GAME_STARTED)
   {
     setGameState(GAME_WON);
+  }else if (GAME_STATE == GAME_DEBUG)
+  {
+   // setGameState(GAME_WAITING);
+  }else if (GAME_STATE == GAME_WAITING)
+  {
+   // setGameState(GAME_DEBUG);
   }
 }
 

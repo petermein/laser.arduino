@@ -4,6 +4,27 @@ void setGameState(int state) {
   if(isValidGameState(state)){
       Serial.println((String)GAME_STATE+">"+state);
       GAME_STATE = state;
+       if (GAME_STATE == GAME_WAITING)
+        {
+          display.print("DISC");
+        }
+        else if (GAME_STATE == GAME_COUNTDOWN)
+        {
+        }
+        else if (GAME_STATE == GAME_STARTED)
+        {
+        }
+        else if (GAME_STATE == GAME_WON)
+        {
+        }
+        else if (GAME_STATE == GAME_FAILED)
+        {
+          display.print("FAIL");
+        }
+        else if (GAME_STATE == GAME_DEBUG)
+        {
+          display.print("DBUG");
+        }
   }else{
       Serial.println((String)state + "is not a valid state");
   }
